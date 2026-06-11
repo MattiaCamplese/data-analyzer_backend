@@ -52,6 +52,19 @@ summariesRoute.get('/:id', async (c) => {
   return c.json(result[0])
 })
 
+summariesRoute.post('/', async (c) => {
+  const body = await c.req.json()
+  const items = Array.isArray(body) ? body : [body]
+
+  if (items.length === 0) {
+    throw new HTTPException(400, { message: 'Nessun record da inserire' })
+  }
+
+  await db.insert(summaries).values(items).onConflictDoNothing()
+
+  return c.json({ status: 'success', inserted: items.length })
+})
+
 summariesRoute.post('/seed', async (c) => {
   await runSeed()
   return c.json({ status: 'success', message: 'Database seeded' })
