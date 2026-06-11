@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
-import { eq, desc, count, ilike } from 'drizzle-orm'
+import { eq, desc, count, ilike, sql } from 'drizzle-orm'
 import db from '../db/index.js'
 import { summaries } from '../db/schema.js'
 import { runSeed } from '../db/seed.js'
@@ -60,9 +60,45 @@ summariesRoute.post('/', async (c) => {
     throw new HTTPException(400, { message: 'Nessun record da inserire' })
   }
 
-  await db.insert(summaries).values(items).onConflictDoNothing()
+  // Upsert: se idsummary esiste aggiorna tutti i campi, altrimenti inserisce
+  const result = await db
+    .insert(summaries)
+    .values(items)
+    .onConflictDoUpdate({
+      target: summaries.idsummary,
+      set: {
+        domain_name:                 sql`excluded.domain_name`,
+        risk_score:                  sql`excluded.risk_score`,
+        creation_date:               sql`excluded.creation_date`,
+        last_edit:                   sql`excluded.last_edit`,
+        summary_text:                sql`excluded.summary_text`,
+        summary_text_en:             sql`excluded.summary_text_en`,
+        servizi_esposti_score:       sql`excluded.servizi_esposti_score`,
+        dataleak_score:              sql`excluded.dataleak_score`,
+        rapporto_leak_email_score:   sql`excluded.rapporto_leak_email_score`,
+        spoofing_score:              sql`excluded.spoofing_score`,
+        open_ports_score:            sql`excluded.open_ports_score`,
+        blacklist_score:             sql`excluded.blacklist_score`,
+        vulnerability_score_active:  sql`excluded.vulnerability_score_active`,
+        vulnerability_score_passive: sql`excluded.vulnerability_score_passive`,
+        certificate_score:           sql`excluded.certificate_score`,
+        n_cert_attivi:               sql`excluded.n_cert_attivi`,
+        n_cert_scaduti:              sql`excluded.n_cert_scaduti`,
+        n_asset:                     sql`excluded.n_asset`,
+        n_similar_domains:           sql`excluded.n_similar_domains`,
+        unique_ipv4:                 sql`excluded.unique_ipv4`,
+        unique_ipv6:                 sql`excluded.unique_ipv6`,
+        n_port:                      sql`excluded.n_port`,
+        email_security:              sql`excluded.email_security`,
+        n_dataleak:                  sql`excluded.n_dataleak`,
+        n_vulns:                     sql`excluded.n_vulns`,
+        waf:                         sql`excluded.waf`,
+        cdn:                         sql`excluded.cdn`,
+      },
+    })
+    .returning({ idsummary: summaries.idsummary })
 
-  return c.json({ status: 'success', inserted: items.length })
+  return c.json({ status: 'success', inserted: result.length })
 })
 
 summariesRoute.post('/seed', async (c) => {
