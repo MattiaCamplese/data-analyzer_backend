@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /c/Users/Matti -maxdepth 4 -type d -name \"esercizi-corso\" 2>/dev/null)",
+      "Read(//c/Users/Matti/**)"
+    ]
+  }
+}
