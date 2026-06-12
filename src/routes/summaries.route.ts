@@ -44,7 +44,11 @@ summariesRoute.get('/', async (c) => {
 
 summariesRoute.get('/:id', async (c) => {
   const { id } = c.req.param()
-  const result = await db.select().from(summaries).where(eq(summaries.idsummary, id))
+  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+  const where = isUUID
+    ? eq(summaries.idsummary, id)
+    : eq(summaries.domain_name, decodeURIComponent(id))
+  const result = await db.select().from(summaries).where(where)
   if (!result.length) throw new HTTPException(404, { message: 'Summary non trovato' })
   return c.json(result[0])
 })
