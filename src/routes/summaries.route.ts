@@ -27,6 +27,7 @@ summariesRoute.get('/', async (c) => {
       .select({
         domain_name: summaries.domain_name,
         max_date: max(summaries.creation_date).as('max_date'),
+        scan_count: count(summaries.idsummary).as('scan_count'),
       })
       .from(summaries)
       .where(nameFilter)
@@ -34,7 +35,7 @@ summariesRoute.get('/', async (c) => {
       .as('sub')
 
     const allItems = await db
-      .select(getTableColumns(summaries))
+      .select({ ...getTableColumns(summaries), scan_count: sub.scan_count })
       .from(summaries)
       .innerJoin(sub, and(
         eq(summaries.domain_name, sub.domain_name),
