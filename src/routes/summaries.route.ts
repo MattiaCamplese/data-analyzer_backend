@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
-import { eq, desc, count, ilike, sql } from 'drizzle-orm'
+import { eq, desc, count, ilike } from 'drizzle-orm'
 import db from '../db/index.js'
 import { summaries } from '../db/schema.js'
 import { runSeed } from '../db/seed.js'
@@ -54,51 +54,54 @@ summariesRoute.get('/:id', async (c) => {
 
 summariesRoute.post('/', async (c) => {
   const body = await c.req.json()
-  const items = Array.isArray(body) ? body : [body]
+  const items: unknown[] = Array.isArray(body) ? body : [body]
 
   if (items.length === 0) {
     throw new HTTPException(400, { message: 'Nessun record da inserire' })
   }
 
-  // Upsert: se idsummary esiste aggiorna tutti i campi, altrimenti inserisce
-  const result = await db
-    .insert(summaries)
-    .values(items)
-    .onConflictDoUpdate({
-      target: summaries.idsummary,
-      set: {
-        domain_name:                 sql`excluded.domain_name`,
-        risk_score:                  sql`excluded.risk_score`,
-        creation_date:               sql`excluded.creation_date`,
-        last_edit:                   sql`excluded.last_edit`,
-        summary_text:                sql`excluded.summary_text`,
-        summary_text_en:             sql`excluded.summary_text_en`,
-        servizi_esposti_score:       sql`excluded.servizi_esposti_score`,
-        dataleak_score:              sql`excluded.dataleak_score`,
-        rapporto_leak_email_score:   sql`excluded.rapporto_leak_email_score`,
-        spoofing_score:              sql`excluded.spoofing_score`,
-        open_ports_score:            sql`excluded.open_ports_score`,
-        blacklist_score:             sql`excluded.blacklist_score`,
-        vulnerability_score_active:  sql`excluded.vulnerability_score_active`,
-        vulnerability_score_passive: sql`excluded.vulnerability_score_passive`,
-        certificate_score:           sql`excluded.certificate_score`,
-        n_cert_attivi:               sql`excluded.n_cert_attivi`,
-        n_cert_scaduti:              sql`excluded.n_cert_scaduti`,
-        n_asset:                     sql`excluded.n_asset`,
-        n_similar_domains:           sql`excluded.n_similar_domains`,
-        unique_ipv4:                 sql`excluded.unique_ipv4`,
-        unique_ipv6:                 sql`excluded.unique_ipv6`,
-        n_port:                      sql`excluded.n_port`,
-        email_security:              sql`excluded.email_security`,
-        n_dataleak:                  sql`excluded.n_dataleak`,
-        n_vulns:                     sql`excluded.n_vulns`,
-        waf:                         sql`excluded.waf`,
-        cdn:                         sql`excluded.cdn`,
-      },
+  const firstItem = items[0] as Record<string, unknown>
+  if (!firstItem?.idsummary) {
+    const keys = Object.keys(firstItem ?? {}).slice(0, 10).join(', ')
+    throw new HTTPException(422, {
+      message: `Campo "idsummary" mancante. Chiavi ricevute: [${keys || 'nessuna'}]`,
     })
-    .returning({ idsummary: summaries.idsummary })
+  }
 
-  return c.json({ status: 'success', inserted: result.length })
+  const intFields = [
+    'risk_score', 'servizi_esposti_score', 'dataleak_score', 'rapporto_leak_email_score',
+    'spoofing_score', 'open_ports_score', 'blacklist_score', 'vulnerability_score_active',
+    'vulnerability_score_passive', 'certificate_score', 'n_cert_attivi', 'n_cert_scaduti',
+    'n_asset', 'n_similar_domains', 'unique_ipv4', 'unique_ipv6',
+  ]
+
+  let inserted = 0
+  for (const raw of items) {
+    const item = { ...(raw as Record<string, unknown>) }
+    for (const f of intFields) {
+      if (typeof item[f] === 'string') item[f] = parseInt(item[f] as string, 10)
+    }
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await db.insert(summaries).values(item as any).onConflictDoNothing()
+      inserted++
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      throw new HTTPException(422, { message: `Errore inserimento record: ${msg}` })
+    }
+  }
+
+  return c.json({ status: 'success', inserted })
+})
+
+summariesRoute.delete('/:id', async (c) => {
+  const { id } = c.req.param()
+  const result = await db
+    .delete(summaries)
+    .where(eq(summaries.idsummary, id))
+    .returning({ idsummary: summaries.idsummary })
+  if (!result.length) throw new HTTPException(404, { message: 'Summary non trovato' })
+  return c.json({ status: 'success', deleted: id })
 })
 
 summariesRoute.post('/seed', async (c) => {
