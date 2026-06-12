@@ -1,4 +1,11 @@
-import { integer, pgTable, varchar, text, json } from "drizzle-orm/pg-core";
+import { integer, pgTable, varchar, text, json, uuid, timestamp } from "drizzle-orm/pg-core";
+
+export const users = pgTable('users', {
+  id: uuid().primaryKey().defaultRandom(),
+  email: text().unique().notNull(),
+  password: text().notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
 
 export const summaries = pgTable("summaries", {
   idsummary:                  varchar({ length: 255 }).primaryKey(),
