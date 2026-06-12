@@ -11,7 +11,7 @@ summariesRoute.get('/', async (c) => {
   const domain  = c.req.query('domain')
   const search  = c.req.query('search')
   const page    = c.req.query('page')    ? +c.req.query('page')!    : undefined
-  const perPage = c.req.query('perPage') ? +c.req.query('perPage')! : 10
+  const perPage = c.req.query('perPage') ? +c.req.query('perPage')! : undefined
 
   const where = domain
     ? eq(summaries.domain_name, domain)
@@ -19,20 +19,17 @@ summariesRoute.get('/', async (c) => {
     ? ilike(summaries.domain_name, `%${search}%`)
     : undefined
 
-  const items = await db
-    .select()
-    .from(summaries)
-    .where(where)
-    .orderBy(desc(summaries.risk_score))
-    .limit(perPage)
-    .offset(page ? (page - 1) * perPage : 0)
+  const items = perPage
+    ? await db.select().from(summaries).where(where).orderBy(desc(summaries.risk_score))
+        .limit(perPage).offset(page ? (page - 1) * perPage : 0)
+    : await db.select().from(summaries).where(where).orderBy(desc(summaries.risk_score))
 
   const [{ count: totalItems }] = await db
     .select({ count: count() })
     .from(summaries)
     .where(where)
 
-  const totalPages = Math.ceil(totalItems / perPage)
+  const totalPages = perPage ? Math.ceil(totalItems / perPage) : 1
 
   return c.json({
     items,
@@ -40,8 +37,8 @@ summariesRoute.get('/', async (c) => {
     page,
     perPage,
     totalPages,
-    hasNextPage: page ? page < totalPages : false,
-    hasPrevPage: page ? page > 1 : false,
+    hasNextPage: (page && perPage) ? page < totalPages : false,
+    hasPrevPage: (page && perPage) ? page > 1 : false,
   })
 })
 
