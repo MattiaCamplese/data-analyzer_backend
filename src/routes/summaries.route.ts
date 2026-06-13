@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
-import { eq, desc, count, ilike, max, and, getTableColumns } from 'drizzle-orm'
+import { eq, desc, count, ilike, max, and, getTableColumns, like, type SQL } from 'drizzle-orm'
 import db from '../db/index.js'
 import { summaries } from '../db/schema.js'
 import { runSeed } from '../db/seed.js'
@@ -11,6 +11,7 @@ const summariesRoute = new Hono().basePath('summaries')
 summariesRoute.get('/', async (c) => {
   const domain  = c.req.query('domain')
   const search  = c.req.query('search')
+  const date    = c.req.query('date')
   const latest  = c.req.query('latest') === 'true'
   const page    = c.req.query('page')    ? +c.req.query('page')!    : undefined
   const perPage = c.req.query('perPage') ? +c.req.query('perPage')! : undefined
@@ -21,6 +22,13 @@ summariesRoute.get('/', async (c) => {
     ? ilike(summaries.domain_name, `%${search}%`)
     : undefined
 
+  const dateFilter = date ? like(summaries.creation_date, `${date}%`) : undefined
+
+  const clauses: SQL[] = []
+  if (nameFilter) clauses.push(nameFilter)
+  if (dateFilter) clauses.push(dateFilter)
+  const where = clauses.length > 0 ? and(...clauses) : undefined
+
   if (latest) {
     // Subquery: one row per domain = the one with the highest creation_date
     const sub = db
@@ -30,7 +38,7 @@ summariesRoute.get('/', async (c) => {
         scan_count: count(summaries.idsummary).as('scan_count'),
       })
       .from(summaries)
-      .where(nameFilter)
+      .where(where)
       .groupBy(summaries.domain_name)
       .as('sub')
 
@@ -61,7 +69,6 @@ summariesRoute.get('/', async (c) => {
   }
 
   // Default: all scans (no deduplication)
-  const where = nameFilter
   const items = perPage
     ? await db.select().from(summaries).where(where).orderBy(desc(summaries.risk_score))
         .limit(perPage).offset(page ? (page - 1) * perPage : 0)
