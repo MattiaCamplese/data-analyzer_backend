@@ -7,6 +7,14 @@ export const users = pgTable('users', {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const refreshTokens = pgTable('refresh_tokens', {
+  id: uuid().primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').unique().notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
 export const summaries = pgTable("summaries", {
   idsummary:                  varchar({ length: 255 }).primaryKey(),
   domain_name:                varchar({ length: 255 }).notNull(),

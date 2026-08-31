@@ -6,7 +6,8 @@ import bcrypt from 'bcryptjs'
 import z from 'zod'
 import db from '../db/index.js'
 import { users } from '../db/schema.js'
-import { generateJwt } from '../lib/utils.js'
+import { generateAccessToken } from '../lib/utils.js'
+import { issueRefreshToken, rotateRefreshToken, revokeRefreshToken } from '../lib/refresh-token.service.js'
 import { type AuthContext, authMiddleware } from '../middleware/auth.middleware.js'
 
 const authRoute = new Hono<AuthContext>().basePath('auth')
@@ -29,9 +30,10 @@ authRoute.post('/login', zValidator('json', loginSchema), async (c) => {
     throw new HTTPException(401, { message: 'Email o password non validi' })
   }
 
-  const token = generateJwt(user.email)
+  const accessToken = generateAccessToken(user.email)
+  const refreshToken = await issueRefreshToken(user.id)
   const { password: _, ...userSafe } = user
-  return c.json({ token, user: userSafe })
+  return c.json({ accessToken, refreshToken, user: userSafe })
 })
 
 authRoute.get('/me', authMiddleware(), async (c) => {
@@ -56,9 +58,36 @@ authRoute.post('/register', zValidator('json', registerSchema), async (c) => {
   const hashed = await bcrypt.hash(password, 10)
   const [user] = await db.insert(users).values({ email, password: hashed }).returning()
   const { password: _, ...userSafe } = user
-  const token = generateJwt(user.email)
+  const accessToken = generateAccessToken(user.email)
+  const refreshToken = await issueRefreshToken(user.id)
 
-  return c.json({ token, user: userSafe }, 201)
+  return c.json({ accessToken, refreshToken, user: userSafe }, 201)
+})
+
+const refreshSchema = z.object({
+  refreshToken: z.string().min(1),
+})
+
+authRoute.post('/refresh', zValidator('json', refreshSchema), async (c) => {
+  const { refreshToken } = c.req.valid('json')
+
+  try {
+    const rotated = await rotateRefreshToken(refreshToken)
+    const [user] = await db.select().from(users).where(eq(users.id, rotated.userId))
+    if (!user) {
+      throw new Error('Utente non trovato')
+    }
+    const accessToken = generateAccessToken(user.email)
+    return c.json({ accessToken, refreshToken: rotated.refreshToken })
+  } catch {
+    throw new HTTPException(401, { message: 'Sessione scaduta, effettua nuovamente il login' })
+  }
+})
+
+authRoute.post('/logout', zValidator('json', refreshSchema), async (c) => {
+  const { refreshToken } = c.req.valid('json')
+  await revokeRefreshToken(refreshToken)
+  return c.body(null, 204)
 })
 
 export default authRoute
